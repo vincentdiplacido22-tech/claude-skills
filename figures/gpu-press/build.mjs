@@ -286,10 +286,11 @@ let frame = 0, last = 0, visible = false;
 
 const passesFor = (n) => (n === 0 || n === LANES ? [Array(LANES).fill(true)] : [Array.from({ length: LANES }, (_, i) => i < n), Array.from({ length: LANES }, (_, i) => i >= n)]);
 const pressTray = () => trays.find((tr) => tr.slot === 1);
-function say() {
-  const n = passes.length;
-  const lanes = branch === 0 || branch === LANES ? "32/32 agree" : branch + "/32 branch";
-  const text = "warp " + warp + " · " + lanes + " · " + n + (n === 1 ? " stroke" : " strokes") + " · " + Math.round(100 / n) + "%";
+function say(next = false) {
+  const b = next ? wanted : branch;
+  const n = passesFor(b).length;
+  const lanes = b === 0 || b === LANES ? "32/32 agree" : b + "/32 branch";
+  const text = (next ? "next: warp " + (warp + 1) : "warp " + warp) + " · " + lanes + " · " + n + (n === 1 ? " stroke" : " strokes") + " · " + Math.round(100 / n) + "%";
   if (readout.textContent !== text) readout.textContent = text;
   stage.setAttribute("aria-valuenow", String(wanted));
   stage.setAttribute("aria-valuetext", wanted + " of 32 lanes take the branch");
@@ -325,6 +326,7 @@ function step(dt) {
   const mask = passes[pass];
   const target = (i) => (phase === "mask" || phase === "stroke") && mask && !mask[i] ? RETRACT : 0;
   for (let i = 0; i < LANES; i++) offset[i] += (target(i) - offset[i]) * (1 - Math.exp(-dt / 0.07));
+  if (phase === "mask") headDz += (0 - headDz) * (1 - Math.exp(-dt / 0.08));
   if (phase === "mask" && t >= 0.4) { phase = "stroke"; t = 0; stamped = false; }
   if (phase === "stroke") {
     const u = Math.min(t / 0.9, 1);
@@ -374,8 +376,16 @@ const steer = (n) => {
   touring = false; wanted = clamp(Math.round(n), 0, LANES);
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => { touring = true; run(); }, 6000);
-  if (still.matches) showStill(); else { stage.setAttribute("aria-valuenow", String(wanted)); run(); }
+  if (still.matches) { showStill(); return; }
+  if (wanted !== branch && (phase === "mask" || phase === "stroke" || phase === "hold")) restartWarp();
+  else if (wanted !== branch) say(true);
+  run();
 };
+function restartWarp() {
+  pressTray().cells.forEach((c) => c.setAttribute("opacity", "0"));
+  branch = wanted; passes = passesFor(branch); pass = 0; phase = "mask"; t = 0; stamped = false;
+  say();
+}
 new IntersectionObserver((entries) => { visible = entries[entries.length - 1].isIntersecting; if (visible) run(); else if (frame) { cancelAnimationFrame(frame); frame = 0; } }, { rootMargin: "120px 0px" }).observe(stage);
 stage.addEventListener("pointermove", (event) => {
   const box = svg.getBoundingClientRect();
